@@ -1,31 +1,31 @@
-const ws281x = require('rpi-ws281x-native') // this changes the pixels
+const ws281x = require('rpi-ws281x-native')
 const { io } = require('socket.io-client')
-const fs = require('fs')
-const { letters } = require('./letters.js');
 
-let classCode = 'noClass'
+const classCode = 'd5f5'
+const brightness = 100
+const api = 'f5f91296026fcc3880c548bf88ca470f9f281fb1562596996e311eb29394e218443d561aa92a886f39eb40da5b254135fc0eb302c6fa6df87705af2f0bdf6108'
+// school
+const ip = 'http://172.16.3.103:420'
+const maxPixels = 12
+const gpio = 21
+const stripType = ws281x.stripType.WS2811_RGB
+// home
+// const ip = 'http://192.168.0.8:420'
+// const maxPixels = 52
+// const gpio = 18
+// const stripType = ws281x.stripType.SK6812_GRBW
 
-// config
-const config = JSON.parse(
-	fs.readFileSync('settings.json')
-)
-
-// const maxPixels = config.barPixels + config.board.height * config.board.width
-const maxPixels = config.barPixels
-
-// set up strip settings
 let strip = ws281x(maxPixels, {
 	dma: 10,
 	freq: 800000,
-	gpio: config.pin,
+	gpio: gpio,
 	invert: false,
-	brightness: config.brightness,
-	stripType: ws281x.stripType[config.stripType]
+	brightness: brightness,
+	stripType: stripType
 })
 let pixels = strip.array
 
 // fill strip with color
-// by default start is 0 and length is the whole strip
 function fill(color, start = 0, length = pixels.length) {
 	if (length >= pixels.length) length = pixels.length
 
@@ -34,93 +34,19 @@ function fill(color, start = 0, length = pixels.length) {
 	}
 }
 
-function showString(boardPixels, start, textColor, backgroundColor, repeat) {
-	let currentPixel = config.barPixels
-	let currentColumn = start
-	let maxColumns = 0
-
-	if (start % 2 == 1) {
-		for (let col of boardPixels) {
-			col.reverse()
-		}
-	}
-
-
-	if (repeat) {
-		maxColumns = config.board.width
-	}
-	else maxColumns = boardPixels.length
-
-	for (let i = 0; i < maxColumns; i++) {
-		let col = boardPixels[currentColumn]
-
-		for (let pixel of col) {
-			if (pixel)
-				pixels[currentPixel] = textColor
-			else
-				pixels[currentPixel] = backgroundColor
-			currentPixel++
-		}
-
-		currentColumn++
-		if (currentColumn >= boardPixels.length) currentColumn = 0
-	}
-}
-
-function displayBoard(string, textColor, backgroundColor) {
-	string = string.toLowerCase()
-
-	let boardPixels = []
-	for (let i = 0; i < string.length; i++) {
-		let letter = string[i]
-		let letterImage = letters[letter]
-
-		for (let col of letterImage) {
-			boardPixels.push(col)
-		}
-		boardPixels.push(Array(8).fill(0))
-	}
-
-	for (let i = 0; i < boardPixels.length; i++) {
-		let col = boardPixels[i]
-
-		if (i % 2 == 0)
-			col = col.reverse()
-	}
-
-	if (boardPixels.length < config.board.width) {
-		showString(boardPixels, 0, textColor, backgroundColor, false)
-
-		ws281x.render()
-	} else {
-		let startColumn = 0
-
-		setInterval(() => {
-			showString(boardPixels, startColumn, textColor, backgroundColor, true)
-
-			startColumn++
-			if (startColumn >= boardPixels.length) startColumn = 0
-
-			ws281x.render()
-		}, 1000);
-	}
-}
-
-// clear pixels
+// clear strip
 fill(0x000000)
 ws281x.render()
 
-// set web socket url
-const socket = io(config.ip, {
+const socket = io(ip, {
 	query: {
-		api: config.api
+		api: api,
+		classCode: classCode
 	}
 })
 
-// when there is a connection error it tys to reconnect
-socket.on('connect_error', (error) => {
-	if (error.message == 'xhr poll error') console.log('no connection');
-	else console.log(error.message);
+socket.on('connect_error', (err) => {
+	console.log(err.message)
 
 	fill(0x000000)
 	ws281x.render()
@@ -130,81 +56,49 @@ socket.on('connect_error', (error) => {
 	}, 5000)
 })
 
-// when it connects to formBar it ask for the bars data
 socket.on('connect', () => {
 	console.log('connected')
-	socket.emit('getUserClass', { api: config.api })
+	socket.emit('vbUpdate')
 })
 
-socket.on('getUserClass', (userClass) => {
-	if (userClass.error) {
-		console.log(userClass.error)
-		setTimeout(() => {
-			socket.emit('getUserClass', { api: config.api })
-		}, 3000)
-	}
-	else if (userClass) {
-		classCode = userClass
-		socket.emit('joinRoom', classCode)
-	}
-})
-
-socket.on('classEnded', () => {
-	socket.emit('leave', classCode)
-	classCode = ''
-	socket.emit('getUserClass', { api: config.api })
-	fill(0x000000)
-	ws281x.render()
-})
-
-socket.on('joinRoom', (classCode) => {
-	if (classCode) {
-		socket.emit('vbUpdate')
-	}
-})
-
-// when the bar changes
 socket.on('vbUpdate', (pollsData) => {
+	console.log('vbUpdate', pollsData)
 	let pixelsPerStudent
 
-	// if no poll clear pixels
-	if (!pollsData.status) {
+	if (!pollsData.pollStatus) {
 		fill(0x000000)
-		// displayBoard(config.ip, 0xFFFFFF, 0x000000)
 		ws281x.render()
 		return
 	}
 
-	fill(0x808080, 0, config.barPixels)
+	fill(0x808080)
 
-	// convert colors from hex to integers
+	// convert colors to integers
 	for (let pollData of Object.values(pollsData.polls)) {
 		pollData.color = parseInt(pollData.color.slice(1), 16)
 	}
 
 	let pollResponses = 0
 
-
-	// count poll responses
 	for (let poll of Object.values(pollsData.polls)) {
 		pollResponses += poll.responses
 	}
 
-	// if totalStudents = pollResponses turn off blind mode
-	if (pollsData.totalStudents == pollResponses) {
-		pollsData.blind = false
+	if (pollsData.totalStudents == pollResponses) pollsData.blindPoll = false
+
+	if (pollsData.blindPoll) {
+		if (pollsData.totalStudents <= 0) pixelsPerStudent = 0
+		else pixelsPerStudent = Math.floor((pixels.length - 1) / pollsData.totalStudents)
+
+		fill(
+			0xFFAA00,
+			0,
+			pixelsPerStudent * pollResponses
+		)
+
+		ws281x.render()
+		return
 	}
-
-
-	// if (pollsData.prompt == 'Thumbs?') {
-	// 	if (pollsData.polls.Up.responses == pollsData.totalStudents)
-	// 		displayBoard(`MAX GAMER`, 0xFF0000, 0x000000)
-	// 	else
-	// 		displayBoard(`TUTD: ${pollResponses}/${pollsData.totalStudents}`, 0xFFFFFF, 0x000000)
-	// }
-	// else
-	// 	displayBoard(`POLL: ${pollResponses}/${pollsData.totalStudents}`, 0xFFFFFF, 0x000000)
-
 
 	// count non-empty polls
 	let nonEmptyPolls = -1
@@ -213,44 +107,23 @@ socket.on('vbUpdate', (pollsData) => {
 			nonEmptyPolls++
 		}
 	}
-
 	if (pollsData.totalStudents <= 0) pixelsPerStudent = 0
-	else pixelsPerStudent = Math.floor((config.barPixels - nonEmptyPolls) / pollsData.totalStudents) //- nonEmptyPolls
+	else pixelsPerStudent = Math.floor((pixels.length - nonEmptyPolls) / pollsData.totalStudents)
 
 	// add polls
 	let currentPixel = 0
-	let pollNumber = 0
-
 	for (let [name, poll] of Object.entries(pollsData.polls)) {
-		// for each response
-		for (let responseNumber = 0; responseNumber < poll.responses; responseNumber++) {
-			let color = poll.color
-			if (pollsData.blind) color = 0xFF8000
+		let length = pixelsPerStudent * poll.responses
 
-			// set response to color
+		if (length > 0)
 			fill(
-				color,
+				poll.color,
 				currentPixel,
-				pixelsPerStudent
+				length
 			)
 
-			currentPixel += pixelsPerStudent
-
-			// set spacers
-			if (
-				responseNumber < poll.responses - 1 ||
-				pollNumber < nonEmptyPolls
-			) {
-				pixels[currentPixel] = 0xFF0080
-				currentPixel++
-			}
-		}
-
-		if (
-			!pollsData.blind &&
-			poll.responses > 0
-		) currentPixel++
-		pollNumber++
+		if (poll.responses > 0) currentPixel++
+		currentPixel += length
 	}
 
 	ws281x.render()
