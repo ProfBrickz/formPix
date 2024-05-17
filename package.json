@@ -1,16 +1,20 @@
 {
-  "name": "formlights",
+  "name": "formPix",
   "version": "1.0.0",
   "description": "",
   "main": "app.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node formPixSim/app",
+    "dev": "nodemon formPixSim/app"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "nodemon": "^3.0.1",
-    "rpi-ws281x-native": "^1.0.4",
+    "ejs": "^3.1.10",
+    "express": "^4.18.3",
     "socket.io-client": "^4.7.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
   }
 }
