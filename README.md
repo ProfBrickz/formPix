@@ -1,6 +1,6 @@
 # formPix
 
-FormPix is a plugin designed for Raspberry Pi to control Neopixel/ws2812 lights for [formbar.js.](https://github.com/csmith1188/Formbar.js)
+FormPix is a plugin designed for Raspberry Pi to control Neopixel/ws2812 lights for [formbar.js](https://github.com/csmith1188/Formbar.js).
 
 ## Installation
 
